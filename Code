@@ -1,0 +1,268 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
+using System.Configuration;
+using System.Linq;
+
+namespace CalcStonesNeededWindowsFormsApp
+{
+    public enum EquipmentType
+    {
+        TwoHanded,
+        Armor,
+        OneHanded,
+        Dagger
+    }
+
+    public partial class FrmEnchantConverter : Form
+    {
+        private readonly Dictionary<int, DataGridViewCell> selectedCells = new Dictionary<int, DataGridViewCell>();
+        private int totalStonesNeeded = 0;
+
+        public FrmEnchantConverter()
+        {
+            InitializeComponent();
+            AddColumnsToDgvEnchantStones();
+            InitializeDgvEnchantStones();
+            UpdateLbEnchantStonesNeeded();
+
+            CmbEquipmentType.Items.AddRange(new string[]
+            {
+                "Two-Handed",
+                "Armor, Shield, Acce, Talisman, Guns",
+                "One-Handed",
+                "Dagger"
+            });
+        }
+
+        private void InitializeDgvEnchantStones()
+        {
+            DgvEnchantStones.SelectionMode = DataGridViewSelectionMode.CellSelect;
+            DgvEnchantStones.MultiSelect = true;
+
+            DgvEnchantStones.Columns.Cast<DataGridViewColumn>()
+                .ToList()
+                .ForEach(column => column.SortMode = DataGridViewColumnSortMode.NotSortable);
+
+            DgvEnchantStones.AllowUserToAddRows = false;
+        }
+
+        private void AddColumnsToDgvEnchantStones()
+        {
+            DgvEnchantStones.Columns.Add("Level", "Level");
+            DgvEnchantStones.Columns.Add("PronteraToMorroc", "Prontera to Morroc");
+            DgvEnchantStones.Columns.Add("MorrocToAlbertaIzlude", "Morroc to Alberta/Izlude");
+            DgvEnchantStones.Columns.Add("AlbertaIzludeToPayon", "Alberta/Izlude to Payon");
+            DgvEnchantStones.Columns.Add("PayonToGeffen", "Payon to Geffen");
+            DgvEnchantStones.Columns.Add("GeffenToGlastheim", "Geffen to Glastheim");
+            DgvEnchantStones.Columns.Add("GlastheimToComodo", "Glastheim to Comodo");
+        }
+
+        private void frmEnchantConverter_Load(object sender, EventArgs e)
+        {
+            CmbEquipmentType.SelectedIndex = 0;
+            string savedColor = ConfigurationManager.AppSettings["BackgroundColor"];
+            SetBackColor(savedColor);
+        }
+
+        private void DgvEnchantStones_cellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            try
+            {
+                DgvEnchantStones.ClearSelection();
+
+                if (e.RowIndex >= 0 && e.ColumnIndex >= 1)
+                {
+                    int columnIndex = e.ColumnIndex;
+                    DataGridViewCell clickedCell = DgvEnchantStones.Rows[e.RowIndex].Cells[columnIndex];
+
+                    if (int.TryParse(clickedCell.Value.ToString(), out int clickedValue))
+                    {
+                        if (selectedCells.TryGetValue(columnIndex, out DataGridViewCell previousCell))
+                        {
+                            totalStonesNeeded = previousCell == clickedCell
+                                ? UpdateStonesForUnmark(previousCell, clickedValue)
+                                : UpdateStonesForSwitch(previousCell, clickedCell, columnIndex, clickedValue);
+                        }
+                        else
+                            totalStonesNeeded = UpdateStonesForNewSelection(clickedCell, columnIndex, clickedValue);
+
+                        UpdateLbEnchantStonesNeeded();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowErrorMessage(ex.Message);
+            }
+        }
+
+        private void GenerateTable(EquipmentType equipmentType)
+        {
+            int[] columnValues;
+
+            switch (equipmentType)
+            {
+                case EquipmentType.Armor:
+                    columnValues = new[] { 132, 110, 90, 72, 56, 42, 30, 20, 12, 6, 2 };
+                    break;
+                case EquipmentType.Dagger:
+                    columnValues = new[] { 198, 165, 135, 108, 84, 63, 45, 30, 18, 9, 3 };
+                    break;
+                case EquipmentType.OneHanded:
+                    columnValues = new[] { 264, 220, 180, 144, 112, 84, 60, 40, 24, 12, 4 };
+                    break;
+                case EquipmentType.TwoHanded:
+                    columnValues = new[] { 396, 330, 270, 216, 168, 126, 90, 60, 36, 18, 6 };
+                    break;
+                default:
+                    return;
+            }
+
+            int columnCount = DgvEnchantStones.ColumnCount;
+
+            for (int level = 15; level >= 5; level--)
+            {
+                string[] rowData = new string[columnCount];
+
+                rowData[0] = $"Lv. {level}";
+
+                for (int colIndex = 1; colIndex < columnCount; colIndex++)
+                {
+                    if (colIndex == 1)
+                        rowData[colIndex] = columnValues[15 - level].ToString();
+                    else
+                    {
+                        int previousValue = int.Parse(rowData[colIndex - 1]);
+                        rowData[colIndex] = (previousValue * 2).ToString();
+                    }
+                }
+
+                DgvEnchantStones.Rows.Add(rowData);
+            }
+        }
+
+        private int UpdateSelectedCell(int clickedValue, DataGridViewCell previousCell, DataGridViewCell clickedCell, int columnIndex)
+        {
+            if (previousCell != null)
+            {
+                totalStonesNeeded -= int.Parse(previousCell.Value.ToString());
+                ResetCellSelection(previousCell);
+            }
+
+            selectedCells[columnIndex] = clickedCell;
+            clickedCell.Style.BackColor = Color.FromArgb(204, 255, 204);
+            return totalStonesNeeded + clickedValue;
+        }
+
+        private void ResetCellSelection(DataGridViewCell cell)
+        {
+            cell.Style.BackColor = Color.White;
+            selectedCells.Remove(selectedCells.GetKeyByValue(cell));
+        }
+
+        private void ShowErrorMessage(string message)
+        {
+            MessageBox.Show($"An error occurred: {message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private int UpdateStonesForUnmark(DataGridViewCell previousCell, int clickedValue)
+        {
+            totalStonesNeeded -= clickedValue;
+            ResetCellSelection(previousCell);
+            return totalStonesNeeded;
+        }
+
+        private int UpdateStonesForSwitch(DataGridViewCell previousCell, DataGridViewCell clickedCell, int columnIndex, int clickedValue)
+        {
+            totalStonesNeeded = UpdateStonesForUnmark(previousCell, int.Parse(previousCell.Value.ToString()));
+            return UpdateSelectedCell(clickedValue, null, clickedCell, columnIndex);
+        }
+
+        private int UpdateStonesForNewSelection(DataGridViewCell clickedCell, int columnIndex, int clickedValue)
+        {
+            totalStonesNeeded = UpdateSelectedCell(clickedValue, null, clickedCell, columnIndex);
+            return totalStonesNeeded;
+        }
+
+        private void UpdateLbEnchantStonesNeeded()
+        {
+            LbTotalStonesNeeded.Text = $"Enchant-Stones needed: {totalStonesNeeded}";
+        }
+
+        private void ClearStoneCount()
+        {
+            DgvEnchantStones.ClearSelection();
+
+            selectedCells.Values.ToList().ForEach(cell =>
+            {
+                cell.Style.BackColor = Color.White;
+            });
+
+            selectedCells.Clear();
+            totalStonesNeeded = 0;
+            UpdateLbEnchantStonesNeeded();
+        }
+
+        private void LlbBuyMeACoffee_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            System.Diagnostics.Process.Start("https://www.buymeacoffee.com/jadezzgaming");
+        }
+
+        private void LlbMadeBy_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            System.Diagnostics.Process.Start("https://www.youtube.com/c/JadezzGaming");
+        }
+
+        private void SetBackColor(string color)
+        {
+            this.BackColor = color == "Black" ? Color.Black : Color.White;
+            LbChoose.ForeColor = color == "Black" ? Color.White : Color.Black;
+            LbTotalStonesNeeded.ForeColor = color == "Black" ? Color.White : Color.Black;
+        }
+
+        private void BtContrast_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string newColor = this.BackColor == Color.White ? "Black" : "White";
+                SetBackColor(newColor);
+
+                System.Configuration.Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
+                config.AppSettings.Settings["BackgroundColor"].Value = newColor;
+                config.Save(ConfigurationSaveMode.Modified);
+                ConfigurationManager.RefreshSection("appSettings");
+            }
+            catch (ConfigurationErrorsException ex)
+            {
+                ShowErrorMessage("Error accessing the configuration file: " + ex.Message);
+            }
+        }
+
+        private void btYoutube_Click(object sender, EventArgs e)
+        {
+            System.Diagnostics.Process.Start("https://www.youtube.com/c/JadezzGaming");
+        }
+
+        private void CmbEquipmentType_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            ClearStoneCount();
+            DgvEnchantStones.Rows.Clear();
+            GenerateTable((EquipmentType)CmbEquipmentType.SelectedIndex);
+        }
+    }
+
+    public static class DictionaryExtensions
+    {
+        public static TKey GetKeyByValue<TKey, TValue>(this Dictionary<TKey, TValue> dictionary, TValue value)
+        {
+            foreach (var pair in dictionary)
+            {
+                if (EqualityComparer<TValue>.Default.Equals(pair.Value, value))
+                    return pair.Key;
+            }
+            throw new Exception("Key not found for the specified value.");
+        }
+    }
+}
